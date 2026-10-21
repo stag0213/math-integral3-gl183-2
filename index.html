@@ -164,4 +164,463 @@
                 <div class="bg-indigo-950/50 border border-indigo-800/50 p-3 rounded-lg">
                     <div class="font-bold text-indigo-300 text-sm">💡 正しい体積の計算値</div>
                     <p class="mt-1 font-mono text-amber-300">V = 4π + 3√3 - 16/3 ≈ 12.433</p>
-                    <p class="mt-1 text-[11px] text-slate-400">（高さ $y$ で切断した断面の面積 $S(y)$ を $y \in [-1, 1]$ で積分することで求まる入試等でも有名な極めて高精度な厳密解
+                    <p class="mt-1 text-[11px] text-slate-400">（高さ $y$ で切断した断面の面積 $S(y)$ を $y \in [-1, 1]$ で積分することで求まる入試等でも有名な極めて高精度な厳密解です）</p>
+                </div>
+            </div>
+            <button id="btn-close-modal-2" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-medium rounded-lg text-xs text-white transition">
+                閉じる
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Animation & Control State ---
+        let isPlaying = true;
+        let parameterT = 0.0;
+        const animationSpeed = 0.005;
+
+        // --- Scene & Geometry Objects ---
+        let scene, camera, renderer, controls;
+        let pSphere, squareLine, volumeGroup, trailGroup;
+        let clippingPlane;
+
+        // --- Geometric Constants ---
+        const SIDE = 1.0;          // Square side length
+        const HALF_SIDE = SIDE / 2; // 0.5
+        const RADIUS = 1.0;        // Sphere radius
+
+        // Square Vertices (in XZ Plane, Y=0)
+        const V_A = new THREE.Vector3(-HALF_SIDE, 0, -HALF_SIDE);
+        const V_B = new THREE.Vector3( HALF_SIDE, 0, -HALF_SIDE);
+        const V_C = new THREE.Vector3( HALF_SIDE, 0,  HALF_SIDE);
+        const V_D = new THREE.Vector3(-HALF_SIDE, 0,  HALF_SIDE);
+
+        function initScene() {
+            const container = document.getElementById('canvas-container');
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.08);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(2.8, 3.2, 4.0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.localClippingEnabled = true;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 + 0.1;
+
+            // Clipping Plane for Section View
+            clippingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(5, 8, 5);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            const dirLight2 = new THREE.DirectionalLight(0xa5b4fc, 0.4);
+            dirLight2.position.set(-5, -5, -5);
+            scene.add(dirLight2);
+
+            // Grid & Axes Helper
+            const gridHelper = new THREE.GridHelper(10, 20, 0x334155, 0x1e293b);
+            gridHelper.position.y = -RADIUS - 0.01;
+            scene.add(gridHelper);
+
+            // Build Objects
+            createSquare();
+            createMovingSphere();
+            createTheoreticalVolume();
+            createTrailContainer();
+
+            // Window Resize
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createSquare() {
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                V_A, V_B, V_C, V_D, V_A
+            ]);
+            const material = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 3 });
+            squareLine = new THREE.Line(geometry, material);
+            scene.add(squareLine);
+
+            const vertexGeo = new THREE.SphereGeometry(0.04, 16, 16);
+            const vertexMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+            
+            [V_A, V_B, V_C, V_D].forEach((v) => {
+                const mesh = new THREE.Mesh(vertexGeo, vertexMat);
+                mesh.position.copy(v);
+                scene.add(mesh);
+            });
+        }
+
+        function createMovingSphere() {
+            // Semi-transparent solid sphere representing the sphere and its interior
+            const geometry = new THREE.SphereGeometry(RADIUS, 32, 32);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0xf59e0b,
+                roughness: 0.2,
+                metalness: 0.1,
+                transparent: true,
+                opacity: 0.65,
+                emissive: 0xd97706,
+                emissiveIntensity: 0.2
+            });
+
+            pSphere = new THREE.Mesh(geometry, material);
+
+            // Wireframe outer mesh for visualization aid
+            const wireGeo = new THREE.SphereGeometry(RADIUS, 16, 16);
+            const wireMat = new THREE.MeshBasicMaterial({ color: 0xfef08a, wireframe: true, transparent: true, opacity: 0.3 });
+            const wireMesh = new THREE.Mesh(wireGeo, wireMat);
+            pSphere.add(wireMesh);
+
+            // Center Point P
+            const centerGeo = new THREE.SphereGeometry(0.05, 16, 16);
+            const centerMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+            const centerPoint = new THREE.Mesh(centerGeo, centerMat);
+            pSphere.add(centerPoint);
+
+            scene.add(pSphere);
+        }
+
+        function createTheoreticalVolume() {
+            volumeGroup = new THREE.Group();
+
+            const volumeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b5cf6, // Violet
+                roughness: 0.3,
+                metalness: 0.1,
+                transparent: true,
+                opacity: 0.75,
+                side: THREE.DoubleSide
+            });
+
+            // Precision continuous envelope geometry using exact cross-sectional boundary equations
+            // At height y (-1 <= y <= 1), cross-sectional radius is r = sqrt(1 - y^2)
+            // The boundary at height y consists of 4 straight lines offset by r and 4 quarter-circle arcs of radius r at the 4 vertices.
+
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const indices = [];
+
+            const numYSteps = 60;          // Height resolution (Y-axis)
+            const stepsPerCorner = 16;     // Resolution for each 90-degree corner arc
+            const stepsPerSide = 8;        // Resolution for each straight side segment
+            const numPerimeterPoints = (stepsPerSide + stepsPerCorner) * 4;
+
+            // Generate Perimeter Vertices Layer by Layer along Y-axis
+            for (let i = 0; i <= numYSteps; i++) {
+                const v = i / numYSteps;
+                const y = -RADIUS + v * (2 * RADIUS); // y from -1 to 1
+                const r = Math.sqrt(Math.max(0, RADIUS * RADIUS - y * y)); // r(y) = sqrt(1 - y^2)
+
+                // Perimeter point generator at height y
+                for (let k = 0; k < 4; k++) {
+                    // k = 0: Corner B (+0.5, -0.5) and Edge BC
+                    // k = 1: Corner C (+0.5, +0.5) and Edge CD
+                    // k = 2: Corner D (-0.5, +0.5) and Edge DA
+                    // k = 3: Corner A (-0.5, -0.5) and Edge AB
+
+                    let vx, vz;
+                    if (k === 0) { vx = HALF_SIDE; vz = -HALF_SIDE; }
+                    else if (k === 1) { vx = HALF_SIDE; vz = HALF_SIDE; }
+                    else if (k === 2) { vx = -HALF_SIDE; vz = HALF_SIDE; }
+                    else { vx = -HALF_SIDE; vz = -HALF_SIDE; }
+
+                    // Start angle for corner arc (k * PI/2 - PI/2)
+                    const startAngle = (k - 1) * (Math.PI / 2);
+
+                    // 1. Corner Arc Points
+                    for (let s = 0; s < stepsPerCorner; s++) {
+                        const alpha = startAngle + (s / stepsPerCorner) * (Math.PI / 2);
+                        const px = vx + r * Math.cos(alpha);
+                        const pz = vz + r * Math.sin(alpha);
+                        vertices.push(px, y, pz);
+                    }
+
+                    // 2. Straight Side Segment Points
+                    const nextAngle = startAngle + Math.PI / 2;
+                    const startX = vx + r * Math.cos(nextAngle);
+                    const startZ = vz + r * Math.sin(nextAngle);
+
+                    let nextVx = vx, nextVz = vz;
+                    if (k === 0) nextVz += SIDE;        // Edge BC direction (+Z)
+                    else if (k === 1) nextVx -= SIDE;   // Edge CD direction (-X)
+                    else if (k === 2) nextVz -= SIDE;   // Edge DA direction (-Z)
+                    else nextVx += SIDE;                // Edge AB direction (+X)
+
+                    const endX = nextVx + r * Math.cos(nextAngle);
+                    const endY = nextVz + r * Math.sin(nextAngle);
+
+                    for (let s = 0; s < stepsPerSide; s++) {
+                        const t = s / stepsPerSide;
+                        const px = startX + t * (endX - startX);
+                        const pz = startZ + t * (endY - startZ);
+                        vertices.push(px, y, pz);
+                    }
+                }
+            }
+
+            // Create side surface quad triangles
+            const ptsPerLayer = numPerimeterPoints;
+            for (let i = 0; i < numYSteps; i++) {
+                for (let j = 0; j < ptsPerLayer; j++) {
+                    const current = i * ptsPerLayer + j;
+                    const next = i * ptsPerLayer + ((j + 1) % ptsPerLayer);
+                    const above = (i + 1) * ptsPerLayer + j;
+                    const aboveNext = (i + 1) * ptsPerLayer + ((j + 1) % ptsPerLayer);
+
+                    indices.push(current, above, next);
+                    indices.push(next, above, aboveNext);
+                }
+            }
+
+            // Add Top and Bottom Cap Vertices & Indices to make solid watertight mesh
+            const bottomCenterIndex = vertices.length / 3;
+            vertices.push(0, -RADIUS, 0); // Bottom tip
+
+            const topCenterIndex = bottomCenterIndex + 1;
+            vertices.push(0, RADIUS, 0); // Top tip
+
+            // Bottom Cap Triangles (Connect bottom layer to bottom tip)
+            for (let j = 0; j < ptsPerLayer; j++) {
+                const next = (j + 1) % ptsPerLayer;
+                indices.push(bottomCenterIndex, next, j);
+            }
+
+            // Top Cap Triangles (Connect top layer to top tip)
+            const topLayerOffset = numYSteps * ptsPerLayer;
+            for (let j = 0; j < ptsPerLayer; j++) {
+                const next = (j + 1) % ptsPerLayer;
+                indices.push(topCenterIndex, topLayerOffset + j, topLayerOffset + next);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+
+            const sweptMesh = new THREE.Mesh(geometry, volumeMaterial);
+            volumeGroup.add(sweptMesh);
+
+            scene.add(volumeGroup);
+        }
+
+        function createTrailContainer() {
+            trailGroup = new THREE.Group();
+            scene.add(trailGroup);
+        }
+
+        let trailSpheres = [];
+        const MAX_TRAIL_STEPS = 90;
+
+        let lastTrailT = -1;
+
+        function updateTrail(currentP) {
+            // Check if t has advanced enough or reset
+            const stepThreshold = 0.04; // Add a sphere every 0.04 step of parameter t
+            
+            // If parameterT jumped backwards or reset, clear or handle appropriately
+            if (lastTrailT < 0 || Math.abs(parameterT - lastTrailT) > stepThreshold) {
+                // If trail exceeds max limit, remove the oldest segment so it flows smoothly
+                if (trailSpheres.length >= MAX_TRAIL_STEPS) {
+                    const oldest = trailSpheres.shift();
+                    trailGroup.remove(oldest.mesh);
+                    oldest.mesh.geometry.dispose();
+                    oldest.mesh.material.dispose();
+                }
+
+                // Create dense solid translucent sphere for current position
+                const geo = new THREE.SphereGeometry(RADIUS, 20, 20);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: 0x10b981,
+                    transparent: true,
+                    opacity: 0.12,
+                    roughness: 0.5
+                });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.copy(currentP);
+                trailGroup.add(mesh);
+                trailSpheres.push({ mesh, position: currentP.clone() });
+
+                lastTrailT = parameterT;
+            }
+        }
+
+        function clearTrail() {
+            while (trailGroup.children.length > 0) {
+                const obj = trailGroup.children[0];
+                obj.geometry.dispose();
+                obj.material.dispose();
+                trailGroup.remove(obj);
+            }
+            trailSpheres = [];
+            lastTrailT = -1;
+        }
+
+        function getPositionAtT(t) {
+            const normT = ((t % 4) + 4) % 4;
+            const pos = new THREE.Vector3();
+
+            if (normT < 1) {
+                pos.lerpVectors(V_A, V_B, normT);
+            } else if (normT < 2) {
+                pos.lerpVectors(V_B, V_C, normT - 1);
+            } else if (normT < 3) {
+                pos.lerpVectors(V_C, V_D, normT - 2);
+            } else {
+                pos.lerpVectors(V_D, V_A, normT - 3);
+            }
+
+            return pos;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isPlaying) {
+                parameterT += animationSpeed;
+                if (parameterT > 4) parameterT -= 4;
+                
+                document.getElementById('slider-t').value = parameterT;
+                document.getElementById('val-t').textContent = parameterT.toFixed(2);
+            }
+
+            const pPos = getPositionAtT(parameterT);
+            pSphere.position.copy(pPos);
+
+            if (document.getElementById('chk-trail').checked) {
+                updateTrail(pPos);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function setupUI() {
+            const btnPlay = document.getElementById('btn-play');
+            const playIcon = document.getElementById('play-icon');
+            
+            btnPlay.addEventListener('click', () => {
+                isPlaying = !isPlaying;
+                if (isPlaying) {
+                    playIcon.className = "fa-solid fa-pause";
+                } else {
+                    playIcon.className = "fa-solid fa-play";
+                }
+            });
+
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                parameterT = 0;
+                document.getElementById('slider-t').value = 0;
+                document.getElementById('val-t').textContent = "0.00";
+                clearTrail();
+            });
+
+            const sliderT = document.getElementById('slider-t');
+            sliderT.addEventListener('input', (e) => {
+                parameterT = parseFloat(e.target.value);
+                document.getElementById('val-t').textContent = parameterT.toFixed(2);
+                clearTrail(); // Clear trail on manual slide for clean display
+            });
+
+            document.getElementById('chk-sphere').addEventListener('change', (e) => {
+                pSphere.visible = e.target.checked;
+            });
+
+            document.getElementById('chk-trail').addEventListener('change', (e) => {
+                trailGroup.visible = e.target.checked;
+                if (!e.target.checked) clearTrail();
+            });
+
+            document.getElementById('chk-volume').addEventListener('change', (e) => {
+                volumeGroup.visible = e.target.checked;
+            });
+
+            document.getElementById('chk-square').addEventListener('change', (e) => {
+                squareLine.visible = e.target.checked;
+            });
+
+            // Section Cut Controls
+            const chkSection = document.getElementById('chk-section');
+            const cutSliderContainer = document.getElementById('cut-slider-container');
+            const sliderCut = document.getElementById('slider-cut');
+
+            chkSection.addEventListener('change', (e) => {
+                const enableCut = e.target.checked;
+                if (enableCut) {
+                    cutSliderContainer.classList.remove('hidden');
+                } else {
+                    cutSliderContainer.classList.add('hidden');
+                }
+
+                volumeGroup.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.clippingPlanes = enableCut ? [clippingPlane] : [];
+                        child.material.needsUpdate = true;
+                    }
+                });
+            });
+
+            sliderCut.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('val-cut').textContent = val.toFixed(2);
+                clippingPlane.constant = val;
+            });
+
+            // Opacity Slider
+            const sliderOpacity = document.getElementById('slider-opacity');
+            sliderOpacity.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('val-opacity').textContent = val.toFixed(2);
+                volumeGroup.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.opacity = val;
+                    }
+                });
+            });
+
+            // Modal Controls
+            const modal = document.getElementById('modal-info');
+            document.getElementById('btn-info').addEventListener('click', () => {
+                modal.classList.remove('hidden');
+            });
+            document.getElementById('btn-close-modal').addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+            document.getElementById('btn-close-modal-2').addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+        }
+
+        window.onload = function() {
+            initScene();
+            setupUI();
+            animate();
+        };
+    </script>
+</body>
+</html>
