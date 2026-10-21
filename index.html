@@ -4,23 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>球体の通過領域の可視化 (Swept Volume of Sphere)</title>
+
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+
+    <!-- Three.js & OrbitControls via cdnjs (HTTPS & Crossorigin ready) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js" crossorigin="anonymous"></script>
+
     <style>
-        body {
+        html, body {
             margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #0f172a;
             color: #f8fafc;
         }
         #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100vw;
             height: 100vh;
+            z-index: 0;
         }
-        /* Custom Scrollbar for Controls */
+        /* Custom Scrollbar for Controls Panel */
         ::-webkit-scrollbar {
             width: 6px;
         }
@@ -36,22 +50,21 @@
         }
     </style>
 </head>
-<body class="select-none">
+<body class="select-none relative w-full h-full">
 
+    <!-- 3D Canvas Container -->
     <div id="canvas-container"></div>
 
-    <!-- UI Overlay Header -->
-    <div class="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-slate-700/50 shadow-2xl max-w-sm">
+    <div class="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-slate-700/50 shadow-2xl max-w-sm pointer-events-auto">
         <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            正方形上を動く球体の通過領域（完全な中身・角の結合）
+            正方形上を動く球体の通過領域
         </h1>
         <p class="text-xs text-slate-300 mt-1">
-            1辺の長さ1の正方形ABCDの辺上を、半径1の球体（内部を含む立体）の中心Pが1周するときに通過する領域の完全な3D可視化。
+            1辺の長さ1の正方形ABCDの辺上を、半径1の球体の中心Pが1周するときに通過する完全な通過領域（内部充填・角部連続）の3D可視化。
         </p>
     </div>
 
-    <!-- UI Overlay Controls Panel -->
-    <div class="absolute bottom-4 left-4 z-10 bg-slate-900/85 backdrop-blur-md p-5 rounded-2xl border border-slate-700/50 shadow-2xl w-80 max-h-[80vh] overflow-y-auto">
+    <div class="absolute bottom-4 left-4 z-10 bg-slate-900/85 backdrop-blur-md p-5 rounded-2xl border border-slate-700/50 shadow-2xl w-80 max-h-[75vh] overflow-y-auto pointer-events-auto">
         <div class="space-y-4">
             
             <!-- Animation Controls -->
@@ -131,40 +144,38 @@
 
             <!-- Mathematical Info Button -->
             <button id="btn-info" class="w-full py-2 bg-slate-800/80 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700 transition flex items-center justify-center gap-2">
-                <i class="fa-solid fa-circle-info text-indigo-400"></i> 通過領域の体積・正確な数学的構造
+                <i class="fa-solid fa-circle-info text-indigo-400"></i> 通過領域の体積・数学的説明
             </button>
         </div>
     </div>
 
-    <!-- Math Explanation Modal -->
     <div id="modal-info" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl relative space-y-4 text-slate-200">
             <button id="btn-close-modal" class="absolute top-4 right-4 text-slate-400 hover:text-white">
                 <i class="fa-solid fa-xmark text-xl"></i>
             </button>
-            <h2 class="text-lg font-bold text-indigo-400 border-b border-slate-800 pb-2">通過領域の数学的構造と角の形状</h2>
+            <h2 class="text-lg font-bold text-indigo-400 border-b border-slate-800 pb-2">通過領域の構造と角の形状</h2>
             <div class="text-xs space-y-2 leading-relaxed text-slate-300 max-h-96 overflow-y-auto pr-1">
-                <p>正方形の辺上（線分AB, BC, CD, DA）を点Pが直進移動するため、通過領域は**「4本の直交する半径1の円柱の和集合」**となります。</p>
+                <p>正方形の辺上を球体の中心Pが直進移動するため、通過領域は**「4本の直交する半径1の円柱の和集合」**となります。</p>
                 
                 <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
                     <div class="font-semibold text-purple-300">1. 中央の直方体領域</div>
-                    <p>正方形ABCDを底面とし、高さ2 ($y \in [-1, 1]$) の $1 \times 1 \times 2$ の直方体。球体の内部が正方形全体を完全に覆います。</p>
+                    <p>正方形ABCDを底面とし、高さ2 ($y \in [-1, 1]$) の $1 \times 1 \times 2$ の直方体。球体の内部が正方形全体を完全に網羅します。</p>
                 </div>
 
                 <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
                     <div class="font-semibold text-indigo-300">2. 4つの外側円柱（直線部）</div>
-                    <p>各辺（長さ1）に沿って半径1の球が平行移動してできる長さ1の半円柱部分。</p>
+                    <p>各辺に沿って半径1の球が平行移動してできる長さ1の半円柱部分。</p>
                 </div>
 
                 <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
                     <div class="font-semibold text-pink-300">3. 角（頂点）での接合部</div>
-                    <p>頂点ABとBCの交差など、角では**「2本の直交する円柱の交差領域（Steinmetz solidの一部）」**として滑らかに直角に折れ曲がります。独立した球ではなく、2つの円柱の外側面が滑らかに交わるL字型ジョイントを形成します。</p>
+                    <p>頂点を中心とした1/4球状の曲面が円柱側面と一体化し、滑らかに結合します。</p>
                 </div>
 
                 <div class="bg-indigo-950/50 border border-indigo-800/50 p-3 rounded-lg">
                     <div class="font-bold text-indigo-300 text-sm">💡 正しい体積の計算値</div>
                     <p class="mt-1 font-mono text-amber-300">V = 4π + 3√3 - 16/3 ≈ 12.433</p>
-                    <p class="mt-1 text-[11px] text-slate-400">（高さ $y$ で切断した断面の面積 $S(y)$ を $y \in [-1, 1]$ で積分することで求まる入試等でも有名な極めて高精度な厳密解です）</p>
                 </div>
             </div>
             <button id="btn-close-modal-2" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-medium rounded-lg text-xs text-white transition">
@@ -174,7 +185,7 @@
     </div>
 
     <script>
-        // --- Animation & Control State ---
+        // --- Global State Variables ---
         let isPlaying = true;
         let parameterT = 0.0;
         const animationSpeed = 0.005;
@@ -185,11 +196,11 @@
         let clippingPlane;
 
         // --- Geometric Constants ---
-        const SIDE = 1.0;          // Square side length
+        const SIDE = 1.0;
         const HALF_SIDE = SIDE / 2; // 0.5
-        const RADIUS = 1.0;        // Sphere radius
+        const RADIUS = 1.0;
 
-        // Square Vertices (in XZ Plane, Y=0)
+        // Square Vertices (XZ Plane)
         const V_A = new THREE.Vector3(-HALF_SIDE, 0, -HALF_SIDE);
         const V_B = new THREE.Vector3( HALF_SIDE, 0, -HALF_SIDE);
         const V_C = new THREE.Vector3( HALF_SIDE, 0,  HALF_SIDE);
@@ -198,34 +209,47 @@
         function initScene() {
             const container = document.getElementById('canvas-container');
 
-            // Scene
+            // Fallback check if WebGL is available
+            if (typeof THREE === 'undefined') {
+                alert('Three.js ライブラリの読み込みに失敗しました。ネットワーク接続を確認してください。');
+                return;
+            }
+
+            // Scene setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0f172a);
             scene.fog = new THREE.FogExp2(0x0f172a, 0.08);
 
-            // Camera
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            // Camera setup
+            const width = window.innerWidth || 800;
+            const height = window.innerHeight || 600;
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
             camera.position.set(2.8, 3.2, 4.0);
 
-            // Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(width, height);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.localClippingEnabled = true;
+
+            // Clear container before append
+            container.innerHTML = '';
             container.appendChild(renderer.domElement);
 
             // Orbit Controls
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.maxPolarAngle = Math.PI / 2 + 0.1;
+            if (THREE.OrbitControls) {
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.maxPolarAngle = Math.PI / 2 + 0.1;
+            }
 
-            // Clipping Plane for Section View
+            // Clipping Plane for Section Cut
             clippingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
 
-            // Lights
+            // Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambientLight);
 
@@ -238,7 +262,7 @@
             dirLight2.position.set(-5, -5, -5);
             scene.add(dirLight2);
 
-            // Grid & Axes Helper
+            // Grid
             const gridHelper = new THREE.GridHelper(10, 20, 0x334155, 0x1e293b);
             gridHelper.position.y = -RADIUS - 0.01;
             scene.add(gridHelper);
@@ -249,7 +273,7 @@
             createTheoreticalVolume();
             createTrailContainer();
 
-            // Window Resize
+            // Window Resize Handler
             window.addEventListener('resize', onWindowResize);
         }
 
@@ -272,7 +296,6 @@
         }
 
         function createMovingSphere() {
-            // Semi-transparent solid sphere representing the sphere and its interior
             const geometry = new THREE.SphereGeometry(RADIUS, 32, 32);
             const material = new THREE.MeshStandardMaterial({
                 color: 0xf59e0b,
@@ -286,13 +309,11 @@
 
             pSphere = new THREE.Mesh(geometry, material);
 
-            // Wireframe outer mesh for visualization aid
             const wireGeo = new THREE.SphereGeometry(RADIUS, 16, 16);
             const wireMat = new THREE.MeshBasicMaterial({ color: 0xfef08a, wireframe: true, transparent: true, opacity: 0.3 });
             const wireMesh = new THREE.Mesh(wireGeo, wireMat);
             pSphere.add(wireMesh);
 
-            // Center Point P
             const centerGeo = new THREE.SphereGeometry(0.05, 16, 16);
             const centerMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
             const centerPoint = new THREE.Mesh(centerGeo, centerMat);
@@ -305,7 +326,7 @@
             volumeGroup = new THREE.Group();
 
             const volumeMaterial = new THREE.MeshStandardMaterial({
-                color: 0x8b5cf6, // Violet
+                color: 0x8b5cf6,
                 roughness: 0.3,
                 metalness: 0.1,
                 transparent: true,
@@ -313,42 +334,29 @@
                 side: THREE.DoubleSide
             });
 
-            // Precision continuous envelope geometry using exact cross-sectional boundary equations
-            // At height y (-1 <= y <= 1), cross-sectional radius is r = sqrt(1 - y^2)
-            // The boundary at height y consists of 4 straight lines offset by r and 4 quarter-circle arcs of radius r at the 4 vertices.
-
             const geometry = new THREE.BufferGeometry();
             const vertices = [];
             const indices = [];
 
-            const numYSteps = 60;          // Height resolution (Y-axis)
-            const stepsPerCorner = 16;     // Resolution for each 90-degree corner arc
-            const stepsPerSide = 8;        // Resolution for each straight side segment
+            const numYSteps = 60;
+            const stepsPerCorner = 16;
+            const stepsPerSide = 8;
             const numPerimeterPoints = (stepsPerSide + stepsPerCorner) * 4;
 
-            // Generate Perimeter Vertices Layer by Layer along Y-axis
             for (let i = 0; i <= numYSteps; i++) {
                 const v = i / numYSteps;
-                const y = -RADIUS + v * (2 * RADIUS); // y from -1 to 1
-                const r = Math.sqrt(Math.max(0, RADIUS * RADIUS - y * y)); // r(y) = sqrt(1 - y^2)
+                const y = -RADIUS + v * (2 * RADIUS);
+                const r = Math.sqrt(Math.max(0, RADIUS * RADIUS - y * y));
 
-                // Perimeter point generator at height y
                 for (let k = 0; k < 4; k++) {
-                    // k = 0: Corner B (+0.5, -0.5) and Edge BC
-                    // k = 1: Corner C (+0.5, +0.5) and Edge CD
-                    // k = 2: Corner D (-0.5, +0.5) and Edge DA
-                    // k = 3: Corner A (-0.5, -0.5) and Edge AB
-
                     let vx, vz;
                     if (k === 0) { vx = HALF_SIDE; vz = -HALF_SIDE; }
                     else if (k === 1) { vx = HALF_SIDE; vz = HALF_SIDE; }
                     else if (k === 2) { vx = -HALF_SIDE; vz = HALF_SIDE; }
                     else { vx = -HALF_SIDE; vz = -HALF_SIDE; }
 
-                    // Start angle for corner arc (k * PI/2 - PI/2)
                     const startAngle = (k - 1) * (Math.PI / 2);
 
-                    // 1. Corner Arc Points
                     for (let s = 0; s < stepsPerCorner; s++) {
                         const alpha = startAngle + (s / stepsPerCorner) * (Math.PI / 2);
                         const px = vx + r * Math.cos(alpha);
@@ -356,16 +364,15 @@
                         vertices.push(px, y, pz);
                     }
 
-                    // 2. Straight Side Segment Points
                     const nextAngle = startAngle + Math.PI / 2;
                     const startX = vx + r * Math.cos(nextAngle);
                     const startZ = vz + r * Math.sin(nextAngle);
 
                     let nextVx = vx, nextVz = vz;
-                    if (k === 0) nextVz += SIDE;        // Edge BC direction (+Z)
-                    else if (k === 1) nextVx -= SIDE;   // Edge CD direction (-X)
-                    else if (k === 2) nextVz -= SIDE;   // Edge DA direction (-Z)
-                    else nextVx += SIDE;                // Edge AB direction (+X)
+                    if (k === 0) nextVz += SIDE;
+                    else if (k === 1) nextVx -= SIDE;
+                    else if (k === 2) nextVz -= SIDE;
+                    else nextVx += SIDE;
 
                     const endX = nextVx + r * Math.cos(nextAngle);
                     const endY = nextVz + r * Math.sin(nextAngle);
@@ -379,7 +386,6 @@
                 }
             }
 
-            // Create side surface quad triangles
             const ptsPerLayer = numPerimeterPoints;
             for (let i = 0; i < numYSteps; i++) {
                 for (let j = 0; j < ptsPerLayer; j++) {
@@ -393,20 +399,17 @@
                 }
             }
 
-            // Add Top and Bottom Cap Vertices & Indices to make solid watertight mesh
             const bottomCenterIndex = vertices.length / 3;
-            vertices.push(0, -RADIUS, 0); // Bottom tip
+            vertices.push(0, -RADIUS, 0);
 
             const topCenterIndex = bottomCenterIndex + 1;
-            vertices.push(0, RADIUS, 0); // Top tip
+            vertices.push(0, RADIUS, 0);
 
-            // Bottom Cap Triangles (Connect bottom layer to bottom tip)
             for (let j = 0; j < ptsPerLayer; j++) {
                 const next = (j + 1) % ptsPerLayer;
                 indices.push(bottomCenterIndex, next, j);
             }
 
-            // Top Cap Triangles (Connect top layer to top tip)
             const topLayerOffset = numYSteps * ptsPerLayer;
             for (let j = 0; j < ptsPerLayer; j++) {
                 const next = (j + 1) % ptsPerLayer;
@@ -419,7 +422,6 @@
 
             const sweptMesh = new THREE.Mesh(geometry, volumeMaterial);
             volumeGroup.add(sweptMesh);
-
             scene.add(volumeGroup);
         }
 
@@ -430,16 +432,11 @@
 
         let trailSpheres = [];
         const MAX_TRAIL_STEPS = 90;
-
         let lastTrailT = -1;
 
         function updateTrail(currentP) {
-            // Check if t has advanced enough or reset
-            const stepThreshold = 0.04; // Add a sphere every 0.04 step of parameter t
-            
-            // If parameterT jumped backwards or reset, clear or handle appropriately
+            const stepThreshold = 0.04;
             if (lastTrailT < 0 || Math.abs(parameterT - lastTrailT) > stepThreshold) {
-                // If trail exceeds max limit, remove the oldest segment so it flows smoothly
                 if (trailSpheres.length >= MAX_TRAIL_STEPS) {
                     const oldest = trailSpheres.shift();
                     trailGroup.remove(oldest.mesh);
@@ -447,7 +444,6 @@
                     oldest.mesh.material.dispose();
                 }
 
-                // Create dense solid translucent sphere for current position
                 const geo = new THREE.SphereGeometry(RADIUS, 20, 20);
                 const mat = new THREE.MeshStandardMaterial({
                     color: 0x10b981,
@@ -467,8 +463,8 @@
         function clearTrail() {
             while (trailGroup.children.length > 0) {
                 const obj = trailGroup.children[0];
-                obj.geometry.dispose();
-                obj.material.dispose();
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
                 trailGroup.remove(obj);
             }
             trailSpheres = [];
@@ -499,69 +495,82 @@
                 parameterT += animationSpeed;
                 if (parameterT > 4) parameterT -= 4;
                 
-                document.getElementById('slider-t').value = parameterT;
-                document.getElementById('val-t').textContent = parameterT.toFixed(2);
+                const slider = document.getElementById('slider-t');
+                if (slider) slider.value = parameterT;
+                const valT = document.getElementById('val-t');
+                if (valT) valT.textContent = parameterT.toFixed(2);
             }
 
             const pPos = getPositionAtT(parameterT);
-            pSphere.position.copy(pPos);
+            if (pSphere) pSphere.position.copy(pPos);
 
-            if (document.getElementById('chk-trail').checked) {
+            const chkTrail = document.getElementById('chk-trail');
+            if (chkTrail && chkTrail.checked) {
                 updateTrail(pPos);
             }
 
-            controls.update();
-            renderer.render(scene, camera);
+            if (controls) controls.update();
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
         }
 
         function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
+            if (!camera || !renderer) return;
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setSize(width, height);
         }
 
         function setupUI() {
             const btnPlay = document.getElementById('btn-play');
             const playIcon = document.getElementById('play-icon');
             
-            btnPlay.addEventListener('click', () => {
-                isPlaying = !isPlaying;
-                if (isPlaying) {
-                    playIcon.className = "fa-solid fa-pause";
-                } else {
-                    playIcon.className = "fa-solid fa-play";
-                }
-            });
+            if (btnPlay) {
+                btnPlay.addEventListener('click', () => {
+                    isPlaying = !isPlaying;
+                    if (playIcon) {
+                        playIcon.className = isPlaying ? "fa-solid fa-pause" : "fa-solid fa-play";
+                    }
+                });
+            }
 
-            document.getElementById('btn-reset').addEventListener('click', () => {
-                parameterT = 0;
-                document.getElementById('slider-t').value = 0;
-                document.getElementById('val-t').textContent = "0.00";
-                clearTrail();
-            });
+            const btnReset = document.getElementById('btn-reset');
+            if (btnReset) {
+                btnReset.addEventListener('click', () => {
+                    parameterT = 0;
+                    document.getElementById('slider-t').value = 0;
+                    document.getElementById('val-t').textContent = "0.00";
+                    clearTrail();
+                });
+            }
 
             const sliderT = document.getElementById('slider-t');
-            sliderT.addEventListener('input', (e) => {
-                parameterT = parseFloat(e.target.value);
-                document.getElementById('val-t').textContent = parameterT.toFixed(2);
-                clearTrail(); // Clear trail on manual slide for clean display
-            });
+            if (sliderT) {
+                sliderT.addEventListener('input', (e) => {
+                    parameterT = parseFloat(e.target.value);
+                    document.getElementById('val-t').textContent = parameterT.toFixed(2);
+                    clearTrail();
+                });
+            }
 
             document.getElementById('chk-sphere').addEventListener('change', (e) => {
-                pSphere.visible = e.target.checked;
+                if (pSphere) pSphere.visible = e.target.checked;
             });
 
             document.getElementById('chk-trail').addEventListener('change', (e) => {
-                trailGroup.visible = e.target.checked;
+                if (trailGroup) trailGroup.visible = e.target.checked;
                 if (!e.target.checked) clearTrail();
             });
 
             document.getElementById('chk-volume').addEventListener('change', (e) => {
-                volumeGroup.visible = e.target.checked;
+                if (volumeGroup) volumeGroup.visible = e.target.checked;
             });
 
             document.getElementById('chk-square').addEventListener('change', (e) => {
-                squareLine.visible = e.target.checked;
+                if (squareLine) squareLine.visible = e.target.checked;
             });
 
             // Section Cut Controls
@@ -569,41 +578,49 @@
             const cutSliderContainer = document.getElementById('cut-slider-container');
             const sliderCut = document.getElementById('slider-cut');
 
-            chkSection.addEventListener('change', (e) => {
-                const enableCut = e.target.checked;
-                if (enableCut) {
-                    cutSliderContainer.classList.remove('hidden');
-                } else {
-                    cutSliderContainer.classList.add('hidden');
-                }
+            if (chkSection) {
+                chkSection.addEventListener('change', (e) => {
+                    const enableCut = e.target.checked;
+                    if (cutSliderContainer) {
+                        cutSliderContainer.classList.toggle('hidden', !enableCut);
+                    }
 
-                volumeGroup.traverse((child) => {
-                    if (child.isMesh) {
-                        child.material.clippingPlanes = enableCut ? [clippingPlane] : [];
-                        child.material.needsUpdate = true;
+                    if (volumeGroup) {
+                        volumeGroup.traverse((child) => {
+                            if (child.isMesh) {
+                                child.material.clippingPlanes = enableCut ? [clippingPlane] : [];
+                                child.material.needsUpdate = true;
+                            }
+                        });
                     }
                 });
-            });
+            }
 
-            sliderCut.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                document.getElementById('val-cut').textContent = val.toFixed(2);
-                clippingPlane.constant = val;
-            });
+            if (sliderCut) {
+                sliderCut.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    document.getElementById('val-cut').textContent = val.toFixed(2);
+                    clippingPlane.constant = val;
+                });
+            }
 
             // Opacity Slider
             const sliderOpacity = document.getElementById('slider-opacity');
-            sliderOpacity.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                document.getElementById('val-opacity').textContent = val.toFixed(2);
-                volumeGroup.traverse((child) => {
-                    if (child.isMesh) {
-                        child.material.opacity = val;
+            if (sliderOpacity) {
+                sliderOpacity.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    document.getElementById('val-opacity').textContent = val.toFixed(2);
+                    if (volumeGroup) {
+                        volumeGroup.traverse((child) => {
+                            if (child.isMesh) {
+                                child.material.opacity = val;
+                            }
+                        });
                     }
                 });
-            });
+            }
 
-            // Modal Controls
+            // Modal
             const modal = document.getElementById('modal-info');
             document.getElementById('btn-info').addEventListener('click', () => {
                 modal.classList.remove('hidden');
@@ -616,11 +633,12 @@
             });
         }
 
-        window.onload = function() {
+        // Initialize on DOM ready
+        window.addEventListener('DOMContentLoaded', () => {
             initScene();
             setupUI();
             animate();
-        };
+        });
     </script>
 </body>
 </html>
