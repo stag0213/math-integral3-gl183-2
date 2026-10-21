@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>球体の通過領域の可視化 (Swept Volume of Sphere)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        /* Custom Scrollbar for Controls */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.5);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.8);
+        }
+    </style>
+</head>
+<body class="select-none">
+
+    <div id="canvas-container"></div>
+
+    <!-- UI Overlay Header -->
+    <div class="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-slate-700/50 shadow-2xl max-w-sm">
+        <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+            正方形上を動く球体の通過領域（完全な中身・角の結合）
+        </h1>
+        <p class="text-xs text-slate-300 mt-1">
+            1辺の長さ1の正方形ABCDの辺上を、半径1の球体（内部を含む立体）の中心Pが1周するときに通過する領域の完全な3D可視化。
+        </p>
+    </div>
+
+    <!-- UI Overlay Controls Panel -->
+    <div class="absolute bottom-4 left-4 z-10 bg-slate-900/85 backdrop-blur-md p-5 rounded-2xl border border-slate-700/50 shadow-2xl w-80 max-h-[80vh] overflow-y-auto">
+        <div class="space-y-4">
+            
+            <!-- Animation Controls -->
+            <div>
+                <label class="text-xs font-semibold uppercase tracking-wider text-indigo-400 block mb-2">アニメーション制御</label>
+                <div class="flex items-center gap-2 mb-3">
+                    <button id="btn-play" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg transition duration-200 shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-pause" id="play-icon"></i>
+                        <span id="play-text">再生 / 一時停止</span>
+                    </button>
+                    <button id="btn-reset" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg border border-slate-700 transition">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs text-slate-400 mb-1">
+                        <span>点Pの位置 (t)</span>
+                        <span id="val-t">0.00</span>
+                    </div>
+                    <input type="range" id="slider-t" min="0" max="4" step="0.005" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                </div>
+            </div>
+
+            <hr class="border-slate-800">
+
+            <!-- Display Options -->
+            <div>
+                <label class="text-xs font-semibold uppercase tracking-wider text-indigo-400 block mb-2">表示コンポーネント</label>
+                
+                <div class="space-y-2 text-sm">
+                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
+                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-regular fa-circle text-amber-400"></i> 動く球体 (中心 P)</span>
+                        <input type="checkbox" id="chk-sphere" checked class="w-4 h-4 accent-indigo-600 rounded">
+                    </label>
+
+                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
+                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-draw-polygon text-emerald-400"></i> 累積軌跡 (連続球群)</span>
+                        <input type="checkbox" id="chk-trail" checked class="w-4 h-4 accent-indigo-600 rounded">
+                    </label>
+
+                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
+                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-cube text-purple-400"></i> 理論的通過領域 (中身含む)</span>
+                        <input type="checkbox" id="chk-volume" checked class="w-4 h-4 accent-indigo-600 rounded">
+                    </label>
+
+                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
+                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-vector-square text-cyan-400"></i> 正方形 ABCD</span>
+                        <input type="checkbox" id="chk-square" checked class="w-4 h-4 accent-indigo-600 rounded">
+                    </label>
+
+                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
+                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-scissors text-rose-400"></i> 断面カット表示</span>
+                        <input type="checkbox" id="chk-section" class="w-4 h-4 accent-indigo-600 rounded">
+                    </label>
+                </div>
+            </div>
+
+            <!-- Section Cut Offset Slider -->
+            <div id="cut-slider-container" class="hidden bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/40">
+                <div class="flex justify-between text-xs text-slate-400 mb-1">
+                    <span class="text-rose-300 font-medium"><i class="fa-solid fa-layer-group mr-1"></i>断面位置 (Y座標)</span>
+                    <span id="val-cut">0.00</span>
+                </div>
+                <input type="range" id="slider-cut" min="-1.0" max="1.0" step="0.02" value="0.0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-500">
+            </div>
+
+            <hr class="border-slate-800">
+
+            <!-- Opacity Control -->
+            <div>
+                <div class="flex justify-between text-xs text-slate-400 mb-1">
+                    <span>完全体の不透明度</span>
+                    <span id="val-opacity">0.75</span>
+                </div>
+                <input type="range" id="slider-opacity" min="0.1" max="1.0" step="0.05" value="0.75" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+            </div>
+
+            <!-- Mathematical Info Button -->
+            <button id="btn-info" class="w-full py-2 bg-slate-800/80 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-circle-info text-indigo-400"></i> 通過領域の体積・正確な数学的構造
+            </button>
+        </div>
+    </div>
+
+    <!-- Math Explanation Modal -->
+    <div id="modal-info" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl relative space-y-4 text-slate-200">
+            <button id="btn-close-modal" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <h2 class="text-lg font-bold text-indigo-400 border-b border-slate-800 pb-2">通過領域の数学的構造と角の形状</h2>
+            <div class="text-xs space-y-2 leading-relaxed text-slate-300 max-h-96 overflow-y-auto pr-1">
+                <p>正方形の辺上（線分AB, BC, CD, DA）を点Pが直進移動するため、通過領域は**「4本の直交する半径1の円柱の和集合」**となります。</p>
+                
+                <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
+                    <div class="font-semibold text-purple-300">1. 中央の直方体領域</div>
+                    <p>正方形ABCDを底面とし、高さ2 ($y \in [-1, 1]$) の $1 \times 1 \times 2$ の直方体。球体の内部が正方形全体を完全に覆います。</p>
+                </div>
+
+                <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
+                    <div class="font-semibold text-indigo-300">2. 4つの外側円柱（直線部）</div>
+                    <p>各辺（長さ1）に沿って半径1の球が平行移動してできる長さ1の半円柱部分。</p>
+                </div>
+
+                <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
+                    <div class="font-semibold text-pink-300">3. 角（頂点）での接合部</div>
+                    <p>頂点ABとBCの交差など、角では**「2本の直交する円柱の交差領域（Steinmetz solidの一部）」**として滑らかに直角に折れ曲がります。独立した球ではなく、2つの円柱の外側面が滑らかに交わるL字型ジョイントを形成します。</p>
+                </div>
+
+                <div class="bg-indigo-950/50 border border-indigo-800/50 p-3 rounded-lg">
+                    <div class="font-bold text-indigo-300 text-sm">💡 正しい体積の計算値</div>
+                    <p class="mt-1 font-mono text-amber-300">V = 4π + 3√3 - 16/3 ≈ 12.433</p>
+                    <p class="mt-1 text-[11px] text-slate-400">（高さ $y$ で切断した断面の面積 $S(y)$ を $y \in [-1, 1]$ で積分することで求まる入試等でも有名な極めて高精度な厳密解
