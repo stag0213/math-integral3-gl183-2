@@ -1,644 +1,329 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>球体の通過領域の可視化 (Swept Volume of Sphere)</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>正方形の周上を動く単位球面の通過部分</title>
+<style>
+  body{margin:0;font-family:system-ui,"Hiragino Sans","Yu Gothic",sans-serif;background:#111;color:#eee;display:flex;height:100vh;overflow:hidden}
+  #panel{width:340px;padding:14px;box-sizing:border-box;overflow-y:auto;background:#1c1f26;flex-shrink:0}
+  #view{flex:1;position:relative}
+  h1{font-size:16px;margin:0 0 10px;line-height:1.4}
+  .row{margin:12px 0}
+  label{font-size:13px;display:block;margin-bottom:4px}
+  input[type=range]{width:100%}
+  select,button{font-size:13px;padding:4px 8px;border-radius:4px;border:1px solid #555;background:#2a2e38;color:#eee}
+  button{cursor:pointer;margin-top:6px}
+  #sec{width:100%;border-radius:6px;background:#fff;display:block}
+  .legend{font-size:12px;margin:6px 0;line-height:1.8}
+  .legend span{display:inline-block;width:12px;height:12px;vertical-align:middle;margin-right:4px;border:1px solid #888}
+  #stats{font-size:13px;margin:8px 0;color:#9fd}
+  #info{font-size:12px;line-height:1.7;color:#bbb;border-top:1px solid #333;padding-top:8px}
+  #info .katex{font-size:1.05em}
+  #secType{font-size:13px;margin:6px 0;color:#ffd27f;min-height:2.2em}
+  #hint{position:absolute;left:10px;bottom:8px;font-size:12px;color:#999}
+  @media(max-width:800px){body{flex-direction:column;height:auto;overflow:auto}#panel{width:100%}#view{height:65vh;order:-1}}
+</style>
 
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+<!-- KaTeX(数式表示) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.getElementById('info'))"></script>
 
-    <!-- FontAwesome CDN -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-
-    <!-- Three.js & OrbitControls via cdnjs (HTTPS & Crossorigin ready) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js" crossorigin="anonymous"></script>
-
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-        }
-        #canvas-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: 0;
-        }
-        /* Custom Scrollbar for Controls Panel */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: rgba(15, 23, 42, 0.6);
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(99, 102, 241, 0.5);
-            border-radius: 3px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(99, 102, 241, 0.8);
-        }
-    </style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
 </head>
-<body class="select-none relative w-full h-full">
-
-    <!-- 3D Canvas Container -->
-    <div id="canvas-container"></div>
-
-    <div class="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-slate-700/50 shadow-2xl max-w-sm pointer-events-auto">
-        <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            正方形上を動く球体の通過領域
-        </h1>
-        <p class="text-xs text-slate-300 mt-1">
-            1辺の長さ1の正方形ABCDの辺上を、半径1の球体の中心Pが1周するときに通過する完全な通過領域（内部充填・角部連続）の3D可視化。
-        </p>
-    </div>
-
-    <div class="absolute bottom-4 left-4 z-10 bg-slate-900/85 backdrop-blur-md p-5 rounded-2xl border border-slate-700/50 shadow-2xl w-80 max-h-[75vh] overflow-y-auto pointer-events-auto">
-        <div class="space-y-4">
-            
-            <!-- Animation Controls -->
-            <div>
-                <label class="text-xs font-semibold uppercase tracking-wider text-indigo-400 block mb-2">アニメーション制御</label>
-                <div class="flex items-center gap-2 mb-3">
-                    <button id="btn-play" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg transition duration-200 shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-pause" id="play-icon"></i>
-                        <span id="play-text">再生 / 一時停止</span>
-                    </button>
-                    <button id="btn-reset" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg border border-slate-700 transition">
-                        <i class="fa-solid fa-rotate-left"></i>
-                    </button>
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs text-slate-400 mb-1">
-                        <span>点Pの位置 (t)</span>
-                        <span id="val-t">0.00</span>
-                    </div>
-                    <input type="range" id="slider-t" min="0" max="4" step="0.005" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-                </div>
-            </div>
-
-            <hr class="border-slate-800">
-
-            <!-- Display Options -->
-            <div>
-                <label class="text-xs font-semibold uppercase tracking-wider text-indigo-400 block mb-2">表示コンポーネント</label>
-                
-                <div class="space-y-2 text-sm">
-                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
-                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-regular fa-circle text-amber-400"></i> 動く球体 (中心 P)</span>
-                        <input type="checkbox" id="chk-sphere" checked class="w-4 h-4 accent-indigo-600 rounded">
-                    </label>
-
-                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
-                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-draw-polygon text-emerald-400"></i> 累積軌跡 (連続球群)</span>
-                        <input type="checkbox" id="chk-trail" checked class="w-4 h-4 accent-indigo-600 rounded">
-                    </label>
-
-                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
-                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-cube text-purple-400"></i> 理論的通過領域 (中身含む)</span>
-                        <input type="checkbox" id="chk-volume" checked class="w-4 h-4 accent-indigo-600 rounded">
-                    </label>
-
-                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
-                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-vector-square text-cyan-400"></i> 正方形 ABCD</span>
-                        <input type="checkbox" id="chk-square" checked class="w-4 h-4 accent-indigo-600 rounded">
-                    </label>
-
-                    <label class="flex items-center justify-between cursor-pointer p-1.5 hover:bg-slate-800/50 rounded-lg transition">
-                        <span class="text-slate-300 flex items-center gap-2"><i class="fa-solid fa-scissors text-rose-400"></i> 断面カット表示</span>
-                        <input type="checkbox" id="chk-section" class="w-4 h-4 accent-indigo-600 rounded">
-                    </label>
-                </div>
-            </div>
-
-            <!-- Section Cut Offset Slider -->
-            <div id="cut-slider-container" class="hidden bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/40">
-                <div class="flex justify-between text-xs text-slate-400 mb-1">
-                    <span class="text-rose-300 font-medium"><i class="fa-solid fa-layer-group mr-1"></i>断面位置 (Y座標)</span>
-                    <span id="val-cut">0.00</span>
-                </div>
-                <input type="range" id="slider-cut" min="-1.0" max="1.0" step="0.02" value="0.0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-500">
-            </div>
-
-            <hr class="border-slate-800">
-
-            <!-- Opacity Control -->
-            <div>
-                <div class="flex justify-between text-xs text-slate-400 mb-1">
-                    <span>完全体の不透明度</span>
-                    <span id="val-opacity">0.75</span>
-                </div>
-                <input type="range" id="slider-opacity" min="0.1" max="1.0" step="0.05" value="0.75" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-            </div>
-
-            <!-- Mathematical Info Button -->
-            <button id="btn-info" class="w-full py-2 bg-slate-800/80 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700 transition flex items-center justify-center gap-2">
-                <i class="fa-solid fa-circle-info text-indigo-400"></i> 通過領域の体積・数学的説明
-            </button>
-        </div>
-    </div>
-
-    <div id="modal-info" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl relative space-y-4 text-slate-200">
-            <button id="btn-close-modal" class="absolute top-4 right-4 text-slate-400 hover:text-white">
-                <i class="fa-solid fa-xmark text-xl"></i>
-            </button>
-            <h2 class="text-lg font-bold text-indigo-400 border-b border-slate-800 pb-2">通過領域の構造と角の形状</h2>
-            <div class="text-xs space-y-2 leading-relaxed text-slate-300 max-h-96 overflow-y-auto pr-1">
-                <p>正方形の辺上を球体の中心Pが直進移動するため、通過領域は**「4本の直交する半径1の円柱の和集合」**となります。</p>
-                
-                <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
-                    <div class="font-semibold text-purple-300">1. 中央の直方体領域</div>
-                    <p>正方形ABCDを底面とし、高さ2 ($y \in [-1, 1]$) の $1 \times 1 \times 2$ の直方体。球体の内部が正方形全体を完全に網羅します。</p>
-                </div>
-
-                <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
-                    <div class="font-semibold text-indigo-300">2. 4つの外側円柱（直線部）</div>
-                    <p>各辺に沿って半径1の球が平行移動してできる長さ1の半円柱部分。</p>
-                </div>
-
-                <div class="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1">
-                    <div class="font-semibold text-pink-300">3. 角（頂点）での接合部</div>
-                    <p>頂点を中心とした1/4球状の曲面が円柱側面と一体化し、滑らかに結合します。</p>
-                </div>
-
-                <div class="bg-indigo-950/50 border border-indigo-800/50 p-3 rounded-lg">
-                    <div class="font-bold text-indigo-300 text-sm">💡 正しい体積の計算値</div>
-                    <p class="mt-1 font-mono text-amber-300">V = 4π + 3√3 - 16/3 ≈ 12.433</p>
-                </div>
-            </div>
-            <button id="btn-close-modal-2" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-medium rounded-lg text-xs text-white transition">
-                閉じる
-            </button>
-        </div>
-    </div>
-
-    <script>
-        // --- Global State Variables ---
-        let isPlaying = true;
-        let parameterT = 0.0;
-        const animationSpeed = 0.005;
-
-        // --- Scene & Geometry Objects ---
-        let scene, camera, renderer, controls;
-        let pSphere, squareLine, volumeGroup, trailGroup;
-        let clippingPlane;
-
-        // --- Geometric Constants ---
-        const SIDE = 1.0;
-        const HALF_SIDE = SIDE / 2; // 0.5
-        const RADIUS = 1.0;
-
-        // Square Vertices (XZ Plane)
-        const V_A = new THREE.Vector3(-HALF_SIDE, 0, -HALF_SIDE);
-        const V_B = new THREE.Vector3( HALF_SIDE, 0, -HALF_SIDE);
-        const V_C = new THREE.Vector3( HALF_SIDE, 0,  HALF_SIDE);
-        const V_D = new THREE.Vector3(-HALF_SIDE, 0,  HALF_SIDE);
-
-        function initScene() {
-            const container = document.getElementById('canvas-container');
-
-            // Fallback check if WebGL is available
-            if (typeof THREE === 'undefined') {
-                alert('Three.js ライブラリの読み込みに失敗しました。ネットワーク接続を確認してください。');
-                return;
-            }
-
-            // Scene setup
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0f172a);
-            scene.fog = new THREE.FogExp2(0x0f172a, 0.08);
-
-            // Camera setup
-            const width = window.innerWidth || 800;
-            const height = window.innerHeight || 600;
-            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-            camera.position.set(2.8, 3.2, 4.0);
-
-            // Renderer setup
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-            renderer.setSize(width, height);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.localClippingEnabled = true;
-
-            // Clear container before append
-            container.innerHTML = '';
-            container.appendChild(renderer.domElement);
-
-            // Orbit Controls
-            if (THREE.OrbitControls) {
-                controls = new THREE.OrbitControls(camera, renderer.domElement);
-                controls.enableDamping = true;
-                controls.dampingFactor = 0.05;
-                controls.maxPolarAngle = Math.PI / 2 + 0.1;
-            }
-
-            // Clipping Plane for Section Cut
-            clippingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
-
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-            scene.add(ambientLight);
-
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-            dirLight.position.set(5, 8, 5);
-            dirLight.castShadow = true;
-            scene.add(dirLight);
-
-            const dirLight2 = new THREE.DirectionalLight(0xa5b4fc, 0.4);
-            dirLight2.position.set(-5, -5, -5);
-            scene.add(dirLight2);
-
-            // Grid
-            const gridHelper = new THREE.GridHelper(10, 20, 0x334155, 0x1e293b);
-            gridHelper.position.y = -RADIUS - 0.01;
-            scene.add(gridHelper);
-
-            // Build Objects
-            createSquare();
-            createMovingSphere();
-            createTheoreticalVolume();
-            createTrailContainer();
-
-            // Window Resize Handler
-            window.addEventListener('resize', onWindowResize);
-        }
-
-        function createSquare() {
-            const geometry = new THREE.BufferGeometry().setFromPoints([
-                V_A, V_B, V_C, V_D, V_A
-            ]);
-            const material = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 3 });
-            squareLine = new THREE.Line(geometry, material);
-            scene.add(squareLine);
-
-            const vertexGeo = new THREE.SphereGeometry(0.04, 16, 16);
-            const vertexMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-            
-            [V_A, V_B, V_C, V_D].forEach((v) => {
-                const mesh = new THREE.Mesh(vertexGeo, vertexMat);
-                mesh.position.copy(v);
-                scene.add(mesh);
-            });
-        }
-
-        function createMovingSphere() {
-            const geometry = new THREE.SphereGeometry(RADIUS, 32, 32);
-            const material = new THREE.MeshStandardMaterial({
-                color: 0xf59e0b,
-                roughness: 0.2,
-                metalness: 0.1,
-                transparent: true,
-                opacity: 0.65,
-                emissive: 0xd97706,
-                emissiveIntensity: 0.2
-            });
-
-            pSphere = new THREE.Mesh(geometry, material);
-
-            const wireGeo = new THREE.SphereGeometry(RADIUS, 16, 16);
-            const wireMat = new THREE.MeshBasicMaterial({ color: 0xfef08a, wireframe: true, transparent: true, opacity: 0.3 });
-            const wireMesh = new THREE.Mesh(wireGeo, wireMat);
-            pSphere.add(wireMesh);
-
-            const centerGeo = new THREE.SphereGeometry(0.05, 16, 16);
-            const centerMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-            const centerPoint = new THREE.Mesh(centerGeo, centerMat);
-            pSphere.add(centerPoint);
-
-            scene.add(pSphere);
-        }
-
-        function createTheoreticalVolume() {
-            volumeGroup = new THREE.Group();
-
-            const volumeMaterial = new THREE.MeshStandardMaterial({
-                color: 0x8b5cf6,
-                roughness: 0.3,
-                metalness: 0.1,
-                transparent: true,
-                opacity: 0.75,
-                side: THREE.DoubleSide
-            });
-
-            const geometry = new THREE.BufferGeometry();
-            const vertices = [];
-            const indices = [];
-
-            const numYSteps = 60;
-            const stepsPerCorner = 16;
-            const stepsPerSide = 8;
-            const numPerimeterPoints = (stepsPerSide + stepsPerCorner) * 4;
-
-            for (let i = 0; i <= numYSteps; i++) {
-                const v = i / numYSteps;
-                const y = -RADIUS + v * (2 * RADIUS);
-                const r = Math.sqrt(Math.max(0, RADIUS * RADIUS - y * y));
-
-                for (let k = 0; k < 4; k++) {
-                    let vx, vz;
-                    if (k === 0) { vx = HALF_SIDE; vz = -HALF_SIDE; }
-                    else if (k === 1) { vx = HALF_SIDE; vz = HALF_SIDE; }
-                    else if (k === 2) { vx = -HALF_SIDE; vz = HALF_SIDE; }
-                    else { vx = -HALF_SIDE; vz = -HALF_SIDE; }
-
-                    const startAngle = (k - 1) * (Math.PI / 2);
-
-                    for (let s = 0; s < stepsPerCorner; s++) {
-                        const alpha = startAngle + (s / stepsPerCorner) * (Math.PI / 2);
-                        const px = vx + r * Math.cos(alpha);
-                        const pz = vz + r * Math.sin(alpha);
-                        vertices.push(px, y, pz);
-                    }
-
-                    const nextAngle = startAngle + Math.PI / 2;
-                    const startX = vx + r * Math.cos(nextAngle);
-                    const startZ = vz + r * Math.sin(nextAngle);
-
-                    let nextVx = vx, nextVz = vz;
-                    if (k === 0) nextVz += SIDE;
-                    else if (k === 1) nextVx -= SIDE;
-                    else if (k === 2) nextVz -= SIDE;
-                    else nextVx += SIDE;
-
-                    const endX = nextVx + r * Math.cos(nextAngle);
-                    const endY = nextVz + r * Math.sin(nextAngle);
-
-                    for (let s = 0; s < stepsPerSide; s++) {
-                        const t = s / stepsPerSide;
-                        const px = startX + t * (endX - startX);
-                        const pz = startZ + t * (endY - startZ);
-                        vertices.push(px, y, pz);
-                    }
-                }
-            }
-
-            const ptsPerLayer = numPerimeterPoints;
-            for (let i = 0; i < numYSteps; i++) {
-                for (let j = 0; j < ptsPerLayer; j++) {
-                    const current = i * ptsPerLayer + j;
-                    const next = i * ptsPerLayer + ((j + 1) % ptsPerLayer);
-                    const above = (i + 1) * ptsPerLayer + j;
-                    const aboveNext = (i + 1) * ptsPerLayer + ((j + 1) % ptsPerLayer);
-
-                    indices.push(current, above, next);
-                    indices.push(next, above, aboveNext);
-                }
-            }
-
-            const bottomCenterIndex = vertices.length / 3;
-            vertices.push(0, -RADIUS, 0);
-
-            const topCenterIndex = bottomCenterIndex + 1;
-            vertices.push(0, RADIUS, 0);
-
-            for (let j = 0; j < ptsPerLayer; j++) {
-                const next = (j + 1) % ptsPerLayer;
-                indices.push(bottomCenterIndex, next, j);
-            }
-
-            const topLayerOffset = numYSteps * ptsPerLayer;
-            for (let j = 0; j < ptsPerLayer; j++) {
-                const next = (j + 1) % ptsPerLayer;
-                indices.push(topCenterIndex, topLayerOffset + j, topLayerOffset + next);
-            }
-
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            geometry.setIndex(indices);
-            geometry.computeVertexNormals();
-
-            const sweptMesh = new THREE.Mesh(geometry, volumeMaterial);
-            volumeGroup.add(sweptMesh);
-            scene.add(volumeGroup);
-        }
-
-        function createTrailContainer() {
-            trailGroup = new THREE.Group();
-            scene.add(trailGroup);
-        }
-
-        let trailSpheres = [];
-        const MAX_TRAIL_STEPS = 90;
-        let lastTrailT = -1;
-
-        function updateTrail(currentP) {
-            const stepThreshold = 0.04;
-            if (lastTrailT < 0 || Math.abs(parameterT - lastTrailT) > stepThreshold) {
-                if (trailSpheres.length >= MAX_TRAIL_STEPS) {
-                    const oldest = trailSpheres.shift();
-                    trailGroup.remove(oldest.mesh);
-                    oldest.mesh.geometry.dispose();
-                    oldest.mesh.material.dispose();
-                }
-
-                const geo = new THREE.SphereGeometry(RADIUS, 20, 20);
-                const mat = new THREE.MeshStandardMaterial({
-                    color: 0x10b981,
-                    transparent: true,
-                    opacity: 0.12,
-                    roughness: 0.5
-                });
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.position.copy(currentP);
-                trailGroup.add(mesh);
-                trailSpheres.push({ mesh, position: currentP.clone() });
-
-                lastTrailT = parameterT;
-            }
-        }
-
-        function clearTrail() {
-            while (trailGroup.children.length > 0) {
-                const obj = trailGroup.children[0];
-                if (obj.geometry) obj.geometry.dispose();
-                if (obj.material) obj.material.dispose();
-                trailGroup.remove(obj);
-            }
-            trailSpheres = [];
-            lastTrailT = -1;
-        }
-
-        function getPositionAtT(t) {
-            const normT = ((t % 4) + 4) % 4;
-            const pos = new THREE.Vector3();
-
-            if (normT < 1) {
-                pos.lerpVectors(V_A, V_B, normT);
-            } else if (normT < 2) {
-                pos.lerpVectors(V_B, V_C, normT - 1);
-            } else if (normT < 3) {
-                pos.lerpVectors(V_C, V_D, normT - 2);
-            } else {
-                pos.lerpVectors(V_D, V_A, normT - 3);
-            }
-
-            return pos;
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            if (isPlaying) {
-                parameterT += animationSpeed;
-                if (parameterT > 4) parameterT -= 4;
-                
-                const slider = document.getElementById('slider-t');
-                if (slider) slider.value = parameterT;
-                const valT = document.getElementById('val-t');
-                if (valT) valT.textContent = parameterT.toFixed(2);
-            }
-
-            const pPos = getPositionAtT(parameterT);
-            if (pSphere) pSphere.position.copy(pPos);
-
-            const chkTrail = document.getElementById('chk-trail');
-            if (chkTrail && chkTrail.checked) {
-                updateTrail(pPos);
-            }
-
-            if (controls) controls.update();
-            if (renderer && scene && camera) {
-                renderer.render(scene, camera);
-            }
-        }
-
-        function onWindowResize() {
-            if (!camera || !renderer) return;
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-            renderer.setSize(width, height);
-        }
-
-        function setupUI() {
-            const btnPlay = document.getElementById('btn-play');
-            const playIcon = document.getElementById('play-icon');
-            
-            if (btnPlay) {
-                btnPlay.addEventListener('click', () => {
-                    isPlaying = !isPlaying;
-                    if (playIcon) {
-                        playIcon.className = isPlaying ? "fa-solid fa-pause" : "fa-solid fa-play";
-                    }
-                });
-            }
-
-            const btnReset = document.getElementById('btn-reset');
-            if (btnReset) {
-                btnReset.addEventListener('click', () => {
-                    parameterT = 0;
-                    document.getElementById('slider-t').value = 0;
-                    document.getElementById('val-t').textContent = "0.00";
-                    clearTrail();
-                });
-            }
-
-            const sliderT = document.getElementById('slider-t');
-            if (sliderT) {
-                sliderT.addEventListener('input', (e) => {
-                    parameterT = parseFloat(e.target.value);
-                    document.getElementById('val-t').textContent = parameterT.toFixed(2);
-                    clearTrail();
-                });
-            }
-
-            document.getElementById('chk-sphere').addEventListener('change', (e) => {
-                if (pSphere) pSphere.visible = e.target.checked;
-            });
-
-            document.getElementById('chk-trail').addEventListener('change', (e) => {
-                if (trailGroup) trailGroup.visible = e.target.checked;
-                if (!e.target.checked) clearTrail();
-            });
-
-            document.getElementById('chk-volume').addEventListener('change', (e) => {
-                if (volumeGroup) volumeGroup.visible = e.target.checked;
-            });
-
-            document.getElementById('chk-square').addEventListener('change', (e) => {
-                if (squareLine) squareLine.visible = e.target.checked;
-            });
-
-            // Section Cut Controls
-            const chkSection = document.getElementById('chk-section');
-            const cutSliderContainer = document.getElementById('cut-slider-container');
-            const sliderCut = document.getElementById('slider-cut');
-
-            if (chkSection) {
-                chkSection.addEventListener('change', (e) => {
-                    const enableCut = e.target.checked;
-                    if (cutSliderContainer) {
-                        cutSliderContainer.classList.toggle('hidden', !enableCut);
-                    }
-
-                    if (volumeGroup) {
-                        volumeGroup.traverse((child) => {
-                            if (child.isMesh) {
-                                child.material.clippingPlanes = enableCut ? [clippingPlane] : [];
-                                child.material.needsUpdate = true;
-                            }
-                        });
-                    }
-                });
-            }
-
-            if (sliderCut) {
-                sliderCut.addEventListener('input', (e) => {
-                    const val = parseFloat(e.target.value);
-                    document.getElementById('val-cut').textContent = val.toFixed(2);
-                    clippingPlane.constant = val;
-                });
-            }
-
-            // Opacity Slider
-            const sliderOpacity = document.getElementById('slider-opacity');
-            if (sliderOpacity) {
-                sliderOpacity.addEventListener('input', (e) => {
-                    const val = parseFloat(e.target.value);
-                    document.getElementById('val-opacity').textContent = val.toFixed(2);
-                    if (volumeGroup) {
-                        volumeGroup.traverse((child) => {
-                            if (child.isMesh) {
-                                child.material.opacity = val;
-                            }
-                        });
-                    }
-                });
-            }
-
-            // Modal
-            const modal = document.getElementById('modal-info');
-            document.getElementById('btn-info').addEventListener('click', () => {
-                modal.classList.remove('hidden');
-            });
-            document.getElementById('btn-close-modal').addEventListener('click', () => {
-                modal.classList.add('hidden');
-            });
-            document.getElementById('btn-close-modal-2').addEventListener('click', () => {
-                modal.classList.add('hidden');
-            });
-        }
-
-        // Initialize on DOM ready
-        window.addEventListener('DOMContentLoaded', () => {
-            initScene();
-            setupUI();
-            animate();
-        });
-    </script>
+<body>
+<div id="panel">
+  <h1>1辺1の正方形ABCDの周上を動く点Pを<br>中心とする半径1の球面の通過部分</h1>
+
+  <div class="row"><label>表示モード</label>
+    <select id="mode">
+      <option value="full">完成形(1周したあと)</option>
+      <option value="grow">Pの移動とともに成長</option>
+    </select></div>
+
+  <div class="row"><label>点Pの位置 s = <span id="sVal"></span>(A→B→C→D→A を 0〜4)</label>
+    <input type="range" id="s" min="0" max="4" step="0.005" value="0">
+    <button id="play">▶ 再生</button></div>
+
+  <div class="row"><label>断面の高さ z = <span id="zVal"></span></label>
+    <input type="range" id="z" min="-1" max="1" step="0.005" value="0"></div>
+
+  <div class="row"><label>切断表示</label>
+    <select id="clip">
+      <option value="none">なし</option>
+      <option value="y">y = 0.5 で半分に切る</option>
+      <option value="x">x = 0.5 で半分に切る</option>
+      <option value="z">断面より上を取り除く</option>
+    </select></div>
+
+  <div class="row"><label>不透明度 <span id="oVal"></span></label>
+    <input type="range" id="op" min="0.1" max="1" step="0.05" value="1"></div>
+
+  <div class="row">
+    <label><input type="checkbox" id="showSphere" checked> 球面(中心P・半径1)を表示</label>
+    <label><input type="checkbox" id="showPlane" checked> 断面の平面を表示</label></div>
+
+  <div class="row"><label>解像度</label>
+    <select id="res"><option>48</option><option>72</option><option selected>100</option><option>130</option></select></div>
+
+  <canvas id="sec" width="320" height="320"></canvas>
+  <div id="secType"></div>
+  <div class="legend">
+    <span style="background:#4a90e2"></span>通過部分　
+    <span style="background:#fad7a0"></span>空洞(どの頂点からも距離&lt;1)<br>
+    <span style="background:#fff;border-color:#e33"></span><b style="color:#e66">赤い円</b>:現在の球面の断面
+  </div>
+  <div id="stats"></div>
+
+  <div id="info">
+    <b>原理</b>:点 \(X\) が通過部分に入る条件は、周上の点 \(P\) について距離 \(XP\) の最小値を \(d_{\min}\)、最大値を \(d_{\max}\) とすると
+    \[ d_{\min} \le 1 \le d_{\max} \]
+    です。つまり「周を芯とする半径 \(1\) のチューブ」から、「4頂点すべてから距離 \(1\) 未満の空洞 \(\left(|z|<\tfrac{1}{\sqrt{2}}\right)\)」を除いた立体になります。<br><br>
+    <b>断面 \(z=t\) の形</b>(\(r=\sqrt{1-t^{2}}\))<br>
+    ・\(|t|<\dfrac{1}{\sqrt{2}}\):角の丸い正方形から、4つの円(中心は各頂点、半径 \(r\))の共通部分を除いた形<br>
+    ・\(\dfrac{1}{\sqrt{2}}\le|t|\le\dfrac{\sqrt{3}}{2}\):穴のない、角の丸い正方形<br>
+    ・\(\dfrac{\sqrt{3}}{2}<|t|\le 1\):1辺 \(1-2r\) の正方形の穴があいた枠<br><br>
+    3D表示では、<b style="color:#4a90e2">青</b>が外側の面、<b style="color:#f0a040">橙</b>が切り口から見える内側の面です。
+  </div>
+</div>
+<div id="view"><div id="hint">ドラッグ:回転 ／ ホイール:拡大縮小 ／ 右ドラッグ:平行移動</div></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------- 幾何 ----------
+const V = [[0,0],[1,0],[1,1],[0,1]];
+function pointAt(s){
+  s = Math.min(Math.max(s,0),4);
+  const e = Math.min(Math.floor(s),3), u = s-e, a=V[e], b=V[(e+1)%4];
+  return [a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u];
+}
+function pathData(s){
+  const segs=[], pts=[V[0]];
+  for(let e=0;e<4;e++){
+    if(s>=e+1){ const b=V[(e+1)%4]; segs.push([V[e],b]); pts.push(b); }
+    else if(s>e){ const p=pointAt(s); segs.push([V[e],p]); pts.push(p); break; }
+    else break;
+  }
+  if(!segs.length) segs.push([V[0],V[0]]);
+  return {segs,pts};
+}
+let _dmin=0,_dmax=0;
+function makeEval(s){
+  const {segs,pts}=pathData(s);
+  const S=[]; for(const [a,b] of segs){const dx=b[0]-a[0],dy=b[1]-a[1];S.push(a[0],a[1],dx,dy,dx*dx+dy*dy);}
+  const P=[]; for(const p of pts) P.push(p[0],p[1]);
+  const ns=S.length, np=P.length;
+  return (x,y,z)=>{
+    const z2=z*z; let dmin=1e9, dmax=0;
+    for(let q=0;q<ns;q+=5){
+      const ax=S[q],ay=S[q+1],dx=S[q+2],dy=S[q+3],L=S[q+4];
+      let t=L>0?((x-ax)*dx+(y-ay)*dy)/L:0; t=t<0?0:t>1?1:t;
+      const qx=x-ax-t*dx, qy=y-ay-t*dy, d=qx*qx+qy*qy; if(d<dmin)dmin=d;
+    }
+    for(let q=0;q<np;q+=2){const qx=x-P[q],qy=y-P[q+1],d=qx*qx+qy*qy;if(d>dmax)dmax=d;}
+    _dmin=Math.sqrt(dmin+z2); _dmax=Math.sqrt(dmax+z2);
+    return Math.max(_dmin-1, 1-_dmax);   // 負なら通過部分
+  };
+}
+
+// ---------- Surface Nets によるメッシュ化 ----------
+const EDGES=[]; for(let b=0;b<8;b++) for(const bit of [1,2,4]) if(!(b&bit)) EDGES.push([b,b|bit]);
+function buildMesh(N,s){
+  const L0=-1.15, span=3.3, h=span/(N-1);
+  const nx=N, ny=N, nz=Math.round(2.3/h)+1, z0=-(nz-1)*h/2;
+  const ev=makeEval(s), f=new Float32Array(nx*ny*nz);
+  const id=(i,j,k)=>i+nx*(j+ny*k);
+  let inside=0;
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const v=ev(L0+i*h,L0+j*h,z0+k*h); f[id(i,j,k)]=v; if(v<0)inside++;
+  }
+  const cellV=new Int32Array(nx*ny*nz).fill(-1), pos=[], cv=new Float32Array(8);
+  let nv=0;
+  for(let k=0;k<nz-1;k++)for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){
+    let mask=0;
+    for(let b=0;b<8;b++){const v=f[id(i+(b&1),j+((b>>1)&1),k+((b>>2)&1))];cv[b]=v;if(v<0)mask|=1<<b;}
+    if(mask===0||mask===255)continue;
+    let sx=0,sy=0,sz=0,c=0;
+    for(const [a,b] of EDGES){
+      const va=cv[a],vb=cv[b];
+      if((va<0)!==(vb<0)){const t=va/(va-vb);
+        sx+=(a&1)+t*((b&1)-(a&1)); sy+=((a>>1)&1)+t*(((b>>1)&1)-((a>>1)&1)); sz+=((a>>2)&1)+t*(((b>>2)&1)-((a>>2)&1)); c++;}
+    }
+    pos.push(L0+(i+sx/c)*h, L0+(j+sy/c)*h, z0+(k+sz/c)*h);
+    cellV[id(i,j,k)]=nv++;
+  }
+  const ind=[], C=(i,j,k)=>cellV[id(i,j,k)];
+  const quad=(a,b,c,d,flip)=>{ if(a<0||b<0||c<0||d<0)return; flip?ind.push(a,d,c,a,c,b):ind.push(a,b,c,a,c,d); };
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const v0=f[id(i,j,k)]<0;
+    if(i<nx-1&&j>=1&&k>=1&&j<ny-1&&k<nz-1&&v0!==(f[id(i+1,j,k)]<0))
+      quad(C(i,j-1,k-1),C(i,j,k-1),C(i,j,k),C(i,j-1,k),!v0);
+    if(j<ny-1&&i>=1&&k>=1&&i<nx-1&&k<nz-1&&v0!==(f[id(i,j+1,k)]<0))
+      quad(C(i-1,j,k-1),C(i-1,j,k),C(i,j,k),C(i,j,k-1),!v0);
+    if(k<nz-1&&i>=1&&j>=1&&i<nx-1&&j<ny-1&&v0!==(f[id(i,j,k+1)]<0))
+      quad(C(i-1,j-1,k),C(i,j-1,k),C(i,j,k),C(i-1,j,k),!v0);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setIndex(ind); g.computeVertexNormals();
+  return {geom:g, volume:inside*h*h*h};
+}
+
+// ---------- Three.js シーン ----------
+const view=document.getElementById('view');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.localClippingEnabled=true; renderer.setPixelRatio(devicePixelRatio);
+view.appendChild(renderer.domElement);
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x15171c);
+const camera=new THREE.PerspectiveCamera(45,1,0.01,100);
+camera.up.set(0,0,1); camera.position.set(3.9,-3.3,2.9);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0.5,0.5,0); controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0xffffff,0.55));
+const l1=new THREE.DirectionalLight(0xffffff,1.1); l1.position.set(3,-2,5); scene.add(l1);
+const l2=new THREE.DirectionalLight(0xffffff,0.5); l2.position.set(-3,4,-3); scene.add(l2);
+scene.add(new THREE.AxesHelper(0.4));
+
+const matF=new THREE.MeshStandardMaterial({color:0x4a90e2,roughness:0.55,metalness:0.05,side:THREE.FrontSide});
+const matB=new THREE.MeshStandardMaterial({color:0xf0a040,roughness:0.7,side:THREE.BackSide});
+const meshF=new THREE.Mesh(new THREE.BufferGeometry(),matF);
+const meshB=new THREE.Mesh(new THREE.BufferGeometry(),matB);
+scene.add(meshF,meshB);
+
+const sqLine=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(V.map(p=>new THREE.Vector3(p[0],p[1],0))),
+  new THREE.LineBasicMaterial({color:0x888888,depthTest:false}));
+sqLine.renderOrder=5; scene.add(sqLine);
+const pathLine=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xff3333,depthTest:false}));
+pathLine.renderOrder=6; scene.add(pathLine);
+
+function label(t,x,y){
+  const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
+  g.fillStyle='#fff';g.font='bold 46px sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(t,32,34);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false}));
+  sp.position.set(x,y,0.06);sp.scale.set(0.2,0.2,1);sp.renderOrder=10;scene.add(sp);
+}
+label('A',-0.1,-0.1);label('B',1.1,-0.1);label('C',1.1,1.1);label('D',-0.1,1.1);
+
+const pDot=new THREE.Mesh(new THREE.SphereGeometry(0.04,16,12),new THREE.MeshBasicMaterial({color:0xff2222,depthTest:false}));
+pDot.renderOrder=11; scene.add(pDot);
+const sphere=new THREE.Mesh(new THREE.SphereGeometry(1,36,24),
+  new THREE.MeshBasicMaterial({color:0xff6666,wireframe:true,transparent:true,opacity:0.3}));
+sphere.rotation.x=Math.PI/2; scene.add(sphere);
+const zPlane=new THREE.Mesh(new THREE.PlaneGeometry(3.4,3.4),
+  new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.12,side:THREE.DoubleSide,depthWrite:false}));
+scene.add(zPlane);
+
+new ResizeObserver(()=>{const w=view.clientWidth,h=view.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe(view);
+
+// ---------- UI ----------
+const $=id=>document.getElementById(id);
+const st={s:0,z:0,mode:'full',playing:false,dragging:false};
+let dragTimer=null, lastKey='', volume=0;
+const clipY=new THREE.Plane(new THREE.Vector3(0,-1,0),0.5);
+const clipX=new THREE.Plane(new THREE.Vector3(-1,0,0),0.5);
+const clipZ=new THREE.Plane(new THREE.Vector3(0,0,-1),0);
+
+function setClip(){
+  const m=$('clip').value;
+  const planes=m==='y'?[clipY]:m==='x'?[clipX]:m==='z'?[clipZ]:[];
+  matF.clippingPlanes=planes; matB.clippingPlanes=planes; matF.needsUpdate=matB.needsUpdate=true;
+}
+function setOpacity(){
+  const o=+$('op').value; $('oVal').textContent=o.toFixed(2);
+  for(const m of [matF,matB]){m.opacity=o;m.transparent=o<1;m.depthWrite=o>=1;m.needsUpdate=true;}
+}
+function markDrag(){st.dragging=true;clearTimeout(dragTimer);dragTimer=setTimeout(()=>st.dragging=false,250);}
+
+$('s').oninput=e=>{st.s=+e.target.value;markDrag();};
+$('z').oninput=e=>{st.z=+e.target.value;clipZ.constant=st.z;drawSection();};
+$('mode').onchange=e=>{st.mode=e.target.value;};
+$('clip').onchange=setClip;
+$('op').oninput=setOpacity;
+$('showSphere').onchange=e=>{sphere.visible=e.target.checked;drawSection();};
+$('showPlane').onchange=e=>{zPlane.visible=e.target.checked;};
+$('play').onclick=()=>{st.playing=!st.playing;$('play').textContent=st.playing?'❚❚ 停止':'▶ 再生';};
+
+// ---------- 断面の区間表示(KaTeX) ----------
+let lastType='';
+function updateSecType(t){
+  const a=Math.abs(t), r=Math.sqrt(Math.max(0,1-t*t));
+  let type, tex, txt;
+  if(a<Math.SQRT1_2){type=0; tex='|z|<\\dfrac{1}{\\sqrt{2}}'; txt=' :中央に空洞あり';}
+  else if(a<=Math.sqrt(3)/2){type=1; tex='\\dfrac{1}{\\sqrt{2}}\\le|z|\\le\\dfrac{\\sqrt{3}}{2}'; txt=' :穴なし';}
+  else {type=2; tex='\\dfrac{\\sqrt{3}}{2}<|z|\\le 1'; txt=' :正方形の穴(1辺 '+(1-2*r).toFixed(3)+')';}
+  const el=$('secType');
+  if(!window.katex){ el.textContent=txt; lastType=''; return; }   // KaTeX読込後に再描画させる
+  const key=type===2?type+'_'+(1-2*r).toFixed(3):String(type);
+  if(key===lastType) return; lastType=key;
+  el.innerHTML=katex.renderToString(tex,{throwOnError:false})+txt;
+}
+
+// ---------- 断面図 ----------
+const sec=$('sec'), ctx=sec.getContext('2d');
+function drawSection(){
+  const W=sec.width, L0=-1.15, span=3.3, t=st.z;
+  updateSecType(t);
+  const ev=makeEval(st.mode==='full'?4:Math.max(st.s,1e-4));
+  const img=ctx.createImageData(W,W), d=img.data;
+  for(let py=0;py<W;py++)for(let px=0;px<W;px++){
+    ev(L0+(px+0.5)/W*span, L0+span-(py+0.5)/W*span, t);
+    const k=4*(py*W+px); let r=255,g=255,b=255;
+    if(_dmin<=1&&_dmax>=1){r=74;g=144;b=226;} else if(_dmin<=1){r=250;g=215;b=160;}
+    d[k]=r;d[k+1]=g;d[k+2]=b;d[k+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  const X=x=>(x-L0)/span*W, Y=y=>(L0+span-y)/span*W;
+  ctx.strokeStyle='#333';ctx.lineWidth=1.5;ctx.beginPath();
+  V.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.closePath();ctx.stroke();
+  ctx.fillStyle='#000';ctx.font='13px sans-serif';
+  [['A',-0.13,-0.13],['B',1.05,-0.13],['C',1.05,1.13],['D',-0.13,1.13]].forEach(([s,x,y])=>ctx.fillText(s,X(x),Y(y)));
+  const P=pointAt(st.s);
+  ctx.fillStyle='#e22';ctx.beginPath();ctx.arc(X(P[0]),Y(P[1]),4,0,7);ctx.fill();
+  if(sphere.visible&&Math.abs(t)<=1){
+    ctx.strokeStyle='#e33';ctx.lineWidth=2;ctx.beginPath();
+    ctx.arc(X(P[0]),Y(P[1]),Math.sqrt(1-t*t)/span*W,0,7);ctx.stroke();
+  }
+  ctx.fillStyle='#000';ctx.fillText(`z = ${t.toFixed(3)}`,8,18);
+}
+
+// ---------- 更新 ----------
+function updateScene(){
+  const N=+$('res').value, low=(st.playing||st.dragging)&&st.mode==='grow';
+  const n=low?Math.min(N,56):N;
+  const key=(st.mode==='full'?'full':st.s.toFixed(3))+'_'+n;
+  if(key!==lastKey){
+    lastKey=key;
+    const r=buildMesh(n,st.mode==='full'?4:Math.max(st.s,1e-4));
+    meshF.geometry.dispose(); meshF.geometry=r.geom; meshB.geometry=r.geom;
+    volume=r.volume; drawSection();
+  }
+  const P=pointAt(st.s);
+  pDot.position.set(P[0],P[1],0); sphere.position.set(P[0],P[1],0);
+  const pts=[V[0]]; for(let e=0;e<4&&st.s>e;e++) pts.push(st.s>=e+1?V[(e+1)%4]:P);
+  pathLine.geometry.setFromPoints(pts.map(p=>new THREE.Vector3(p[0],p[1],0)));
+  zPlane.position.set(0.5,0.5,st.z);
+  $('sVal').textContent=st.s.toFixed(3); $('zVal').textContent=st.z.toFixed(3);
+  $('stats').innerHTML=`P = (${P[0].toFixed(3)}, ${P[1].toFixed(3)}, 0)<br>体積(格子による概算)≈ ${volume.toFixed(3)}`;
+}
+
+let prev=performance.now(), lastSecS=-1;
+function loop(now){
+  const dt=Math.min((now-prev)/1000,0.1); prev=now;
+  if(st.playing){ st.s+=dt*0.5; if(st.s>4)st.s-=4; $('s').value=st.s; }
+  updateScene();
+  if(st.mode==='full'&&Math.abs(st.s-lastSecS)>1e-6){lastSecS=st.s;drawSection();}
+  if(!lastType&&window.katex) updateSecType(st.z);
+  controls.update(); renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+setClip(); setOpacity(); requestAnimationFrame(loop);
+</script>
 </body>
 </html>
